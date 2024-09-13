@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "baseUrl": "./",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "target": "ES2020",
+    "allowJs": true,
+    "module": "ESNext",
+    "sourceMap": true,
+    "noImplicitAny": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "downlevelIteration": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "node",
+    "paths": {
+      "@shared/*": ["../shared/*"],
+      "@src/*": ["src/*"]
+    },
+    "types": ["@ragempcommunity/types-server", "node"]
+  },
+  "exclude": [
+    "node_modules",
+    "rollup.config.mjs",
+    "../dist"
+  ]
+}

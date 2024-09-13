@@ -1,0 +1,25 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "rollup -c rollup.config.mjs"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@ragempcommunity/types-server": "^2.1.8",
+    "@rollup/plugin-alias": "^5.1.0",
+    "@rollup/plugin-commonjs": "^26.0.1",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@types/node": "^20.2.3",
+    "rollup": "^4.21.2",
+    "rollup-plugin-typescript2": "^0.36.0"
+  },
+  "dependencies": {
+    "rage-rpc": "^0.4.0",
+    "zod": "^3.23.8"
+  }
+}

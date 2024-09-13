@@ -1,0 +1,10 @@
+.vscode/
+.idea/
+node_modules/
+package-lock.json
+packages/build/**
+client_packages/**
+bin
+ragemp-server.exe
+linux_x64.tar.gz
+BugTrap-x64.dll
