@@ -4,7 +4,7 @@ import {randomFloatBetween} from "@src/utils/math";
 import {callClient, callClientAsync} from "@shared/rpcWrapper";
 import {handleError} from "@src/utils/handleError";
 import {ItemsPubgTypes} from "@shared/types/weaponPubgTypes";
-import {GameItem, GameLobby, lobbies} from "@src/modules/pubg/gameplay/lobbies";
+import {deleteLobbyEndGame, GameItem, GameLobby, lobbies} from "@src/modules/pubg/gameplay/lobbies";
 import {startAllCountsForLobby, excludePlayerFromLobby} from "@src/modules/pubg/death";
 import {startZonePubg} from "@src/modules/pubg/zone";
 
@@ -49,6 +49,13 @@ export const startLobbyCountdown = async (lobby: GameLobby) => {
 };
 
 const startGame = async (lobby: GameLobby) => {
+    if(lobby.players.size === 1){
+        const player: PlayerMp = lobby.players.values().next().value
+        if(player){
+            player.notify('Старт игры отменен')
+        }
+        return deleteLobbyEndGame(lobby)
+    }
     lobby.isGameActive = true;
     // Спавн оружия рандомно
     await spawnWeaponsAndArmor(lobby)
@@ -77,17 +84,31 @@ const startGame = async (lobby: GameLobby) => {
 
 // Функция для получения случайной позиции на территории
 export const getRandomPositionInTerritory = async (lobby: GameLobby, player: PlayerMp): Promise<Vector3> => {
-    const territory = lobby.territory
-    const randomX = randomFloatBetween(territory.minPosition.x, territory.maxPosition.x);
-    const randomY = randomFloatBetween(territory.minPosition.y, territory.maxPosition.y);
-    let randomZ
-    await callClientAsync<GroundHeightTypes, number>(player, "getGroundHeight", {x: randomX, y: randomY}).then((res: number) => {
-        randomZ = res
-    }).catch((err) => handleError(player, err))
-    if(randomZ === null){
-        return new mp.Vector3(0, 0, 0)
+    const territory = lobby.territory;
+    const maxRetries = 10; // Максимальное количество попыток
+    let attempt = 0;
+
+    while (attempt < maxRetries) {
+        const randomX = randomFloatBetween(territory.minPosition.x, territory.maxPosition.x);
+        const randomY = randomFloatBetween(territory.minPosition.y, territory.maxPosition.y);
+        let randomZ: number | null = null;
+        // Запрашиваем высоту земли для случайных координат
+        await callClientAsync<GroundHeightTypes, number>(player, "getGroundHeight", { x: randomX, y: randomY })
+            .then((res: number) => {
+                randomZ = res;
+                console.log(randomX)
+                console.log(randomY)
+                console.log(res)
+            })
+            .catch((err) => handleError(player, err));
+        // Если получили корректные координаты, возвращаем их
+        if (randomZ !== null && randomZ !== 0) {
+            return new mp.Vector3(randomX, randomY, randomZ);
+        }
+        attempt++;
     }
-    return new mp.Vector3(randomX, randomY, randomZ)
+    // Если после всех попыток не удалось получить корректные координаты, возвращаем координаты по умолчанию
+    return new mp.Vector3(0, 0, 0);
 };
 
 // Список хэшей предметов для спавна

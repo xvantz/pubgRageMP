@@ -1,22 +1,36 @@
 import {createEventAsync} from "@shared/rpcWrapper";
 import {GroundHeightTypes} from "@shared/types/groundHeightTypes";
 
-export const getGroundHeight = async (xy: GroundHeightTypes): Promise<number> => {
-    const startZ = 1000.0; // Начальная высота для поиска
-    let attempt = 0; // Счётчик попыток
-    const maxAttempts = 50; // Максимальное количество попыток
+export const getGroundHeight = async (xy: GroundHeightTypes): Promise<number | null> => {
+    const maxAttempts = 10; // количество попыток
+    const waitTime = 50; // время ожидания между попытками (мс)
+    const minZ = 1; // Минимальная возможная высота
+    const maxZ = 1000; // Максимальная возможная высота
 
-    while (attempt < maxAttempts) {
-        const found = mp.game.gameplay.getGroundZFor3dCoord(xy.x, xy.y, startZ, false, false);
-        mp.gui.chat.push(`${found}`)
-        if (found) {
-            return found;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        // Используем бинарный поиск для нахождения высоты
+        let low = minZ;
+        let high = maxZ;
+
+        while (high - low > 1) {
+            const midZ = (low + high) / 2;
+            const {groundZ, normal, result} = mp.game.gameplay.getGroundZAndNormalFor3DCoord(xy.x, xy.y, midZ);
+
+            if (result) {
+                return groundZ;
+            } else if (midZ > groundZ) {
+                high = midZ;
+            } else {
+                low = midZ;
+            }
         }
-        attempt++;
-        await new Promise(resolve => setTimeout(resolve, 10));
+
+        // Если бинарный поиск не нашел результат, ждем и пробуем снова
+        await new Promise(resolve => setTimeout(resolve, waitTime));
     }
 
-    return null; // Возвращаем null, если не удалось получить высоту после всех попыток
+    console.log(`Не удалось найти высоту для координат: x=${xy.x}, y=${xy.y}`);
+    return null;
 }
 
 createEventAsync("getGroundHeight", async (xy: GroundHeightTypes) => {

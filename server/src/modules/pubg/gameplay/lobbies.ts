@@ -28,7 +28,17 @@ export const findLobbyByPlayerId = (playerId: number) => {
 };
 
 export const deleteLobbyEndGame = (lobby: GameLobby) => {
-    const findIndex = lobbies.findIndex((l) => l === lobby)
-    if(findIndex === -1) return
-    lobbies.splice(findIndex, 1)
+    try {
+        const findIndex = lobbies.findIndex((l) => l === lobby)
+        if (findIndex === -1) return
+        lobbies[findIndex].items.forEach((item) => {
+            item.object.destroy()
+        })
+        lobbies[findIndex].players.forEach((player) => {
+            player.dimension = 0
+        })
+        lobbies.splice(findIndex, 1)
+    }catch (e) {
+        console.error(e)
+    }
 }

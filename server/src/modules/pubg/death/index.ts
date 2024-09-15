@@ -1,13 +1,19 @@
 import {callClient, createEvent} from "@shared/rpcWrapper";
 import {KillDataPubg, PlayerDeadPubg} from "@shared/types/playerDeadPubg";
 import {findLobbyByPlayerId, GameLobby} from "@src/modules/pubg/gameplay/lobbies";
-import {deleteLobbyEndGame} from "@src/modules/pubg/gameplay/lobbies";
 import {resetAllZones} from "@src/modules/pubg/zone";
 
 createEvent("playerDeadPubg", async (data: PlayerDeadPubg, info) => {
     const player = info.player as PlayerMp
     const killer = data.killer
     const foundPlayerInLobby = findLobbyByPlayerId(player.id)
+    // Координаты точки входа
+    const entryPoint = new mp.Vector3(121.47, -30.10, 66.5);
+    // Телепортируем игрока к точке входа
+    player.dimension = 0;
+    player.health = 100
+    player.spawn(entryPoint);
+    player.notify("Вы перемещены ко входу.");
     if(!foundPlayerInLobby) return
     await excludePlayerFromLobby(player, foundPlayerInLobby)
     await resetAllCounts(player)
@@ -55,13 +61,5 @@ export const addKillBarNew = async (player: PlayerMp, killer: PlayerMp, lobby: G
 export const excludePlayerFromLobby = async (player: PlayerMp, lobby: GameLobby) => {
     if (lobby.players.has(player.id)) {
         lobby.players.delete(player.id); // Удаляем игрока из списка лобби
-        // Координаты точки входа
-        const entryPoint = new mp.Vector3(121.47, -30.10, 66.5);
-        // Телепортируем игрока к точке входа
-        player.dimension = 0;
-        player.health = 100
-        player.spawn(entryPoint);
-        // Уведомление игрока
-        player.notify("Вы перемещены ко входу.");
     }
 };

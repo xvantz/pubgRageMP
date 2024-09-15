@@ -19,7 +19,7 @@ const phases = [
 
 // Запускаем систему зоинрования
 export const startZonePubg = async (lobby: GameLobby) => {
-    if(lobby.players.size === 0) deleteLobbyEndGame(lobby)
+    if(lobby.players.size === 1) return deleteLobbyEndGame(lobby)
     const minPos = lobby.territory.minPosition
     const maxPos = lobby.territory.maxPosition
     const centerX = (minPos.x + maxPos.x) / 2;
@@ -42,7 +42,7 @@ export const startZonePubg = async (lobby: GameLobby) => {
 const manageZonePhases = async (position: Vector3, lobby: GameLobby) => {
 
     const applyNextPhase = () => {
-        if(lobby.players.size === 0) deleteLobbyEndGame(lobby)
+        if(lobby.players.size === 1) return deleteLobbyEndGame(lobby)
         const currentPhase = lobby.currentPhase
         if (currentPhase >= phases.length) return;
         const { duration, pause, damage } = phases[currentPhase];
@@ -53,9 +53,6 @@ const manageZonePhases = async (position: Vector3, lobby: GameLobby) => {
         shrinkZoneGradually(position, lobby, duration, () => {
             setTimeout(applyNextPhase, pause); // Пауза перед следующей фазой
         });
-        playersOutsideZone.forEach(player => {
-            startDamageOverTime(player, damage); // Увеличение урона вне зоны по фазам
-        });
     };
 
     applyNextPhase();
@@ -63,7 +60,7 @@ const manageZonePhases = async (position: Vector3, lobby: GameLobby) => {
 
 // Плавное сужение зоны
 const shrinkZoneGradually = async (position: Vector3, lobby: GameLobby, duration: number, onComplete: Function) => {
-    if(lobby.players.size === 0) deleteLobbyEndGame(lobby)
+    if(lobby.players.size === 1) return deleteLobbyEndGame(lobby)
     const minRadius = 10;
     // Вычисляем уменьшение радиуса для текущей фазы в секунду
     const totalPhase = phases.length
@@ -80,36 +77,16 @@ const shrinkZoneGradually = async (position: Vector3, lobby: GameLobby, duration
         lobby.radius -= speedChange;
         if (lobby.colshape) lobby.colshape.destroy();
         lobby.colshape = mp.colshapes.newCircle(position.x, position.y, lobby.radius, lobby.dimension);
-        // console.log(lobby.radius)
-
         lobby.players.forEach((player) => {
             callClient<ZonePubg>(player, "updateZonePubg", { position, radius: lobby.radius });
+            monitorPlayerPosition(player, phases[lobby.currentPhase].damage,lobby)
         });
         step++
     }, 100);
 };
 
-// Проверка нахождения игроков в зоне
-mp.events.add("playerEnterColshape", async (player, colshape) => {
-    const findLobby = findLobbyByPlayerId(player.id);
-    if (!findLobby) return;
-    if (colshape === findLobby.colshape) {
-        playersOutsideZone.delete(player); // Убираем из списка игроков вне зоны
-    }
-});
-
-// Проверка если игроки оказались вне зоны
-mp.events.add("playerExitColshape", async (player, colshape) => {
-    const findLobby = findLobbyByPlayerId(player.id);
-    if (!findLobby) return;
-    if (colshape === findLobby.colshape) {
-        playersOutsideZone.add(player); // Добавляем игрока в список вне зоны
-        await startDamageOverTime(player, phases[findLobby.currentPhase].damage); // Начинаем наносить урон игроку
-    }
-});
-
 // Нанесение урона игроку вне зоны
-const startDamageOverTime = async (player: PlayerMp, damage: number, delay: number = 5000) => {
+const startDamageOverTime = (player: PlayerMp, damage: number, delay: number = 5000) => {
     // Устанавливаем таймер для задержки перед началом урона
     setTimeout(() => {
         // Начинаем наносить урон с интервалом
@@ -117,7 +94,7 @@ const startDamageOverTime = async (player: PlayerMp, damage: number, delay: numb
             if (playersOutsideZone.has(player)) {
                 if (player.dimension === 0) {
                     clearInterval(damageInterval);
-                    playersOutsideZone.delete(player); // Останавливаем урон при выходе
+                    return playersOutsideZone.delete(player); // Останавливаем урон при выходе
                 }
 
                 player.health -= damage; // Наносим урон в зависимости от фазы
@@ -136,3 +113,32 @@ const startDamageOverTime = async (player: PlayerMp, damage: number, delay: numb
 export const resetAllZones = async (player: PlayerMp) => {
     callClient(player, "resetViewZonePubg")
 }
+
+const checkPlayerInColshape = (player: PlayerMp, colshape: ColshapeMp) => {
+    // Проверка находится ли точка внутри колшейпа
+    return colshape.isPointWithin(player.position);
+};
+
+const monitorPlayerPosition = (player: PlayerMp, damage: number, lobby: GameLobby) => {
+    const checkInterval = 1000; // Интервал проверки
+    const damageInterval = 5000; // Интервал старта нанесения урона
+
+    const interval = setInterval(() => {
+        if (player && lobby.colshape) {
+            // Проверяем, находится ли игрок за пределами колшейпа
+            if (!checkPlayerInColshape(player, lobby.colshape)) {
+                if (!playersOutsideZone.has(player)) {
+                    playersOutsideZone.add(player);
+                    // Начинаем наносить урон, если игрок за пределами
+                    startDamageOverTime(player, damage, damageInterval);
+                }
+            } else {
+                if (playersOutsideZone.has(player)) {
+                    playersOutsideZone.delete(player);
+                    clearInterval(interval)
+                    // Останавливаем урон, если игрок вернулся в зону
+                }
+            }
+        }
+    }, checkInterval);
+};
