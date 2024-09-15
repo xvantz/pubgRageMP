@@ -6,7 +6,8 @@
   "author": "",
   "scripts": {
     "start": "ragemp-server.exe",
-    "build": "cd client && npm run build && cd ../server && npm run build"
+    "build": "cd client && npm run build && cd ../server && npm run build",
+    "installAll": "npm install && cd client && npm install && cd ../server && npm install"
   },
   "license": "ISC",
   "dependencies": {
