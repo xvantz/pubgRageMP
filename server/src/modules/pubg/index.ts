@@ -1,5 +1,3 @@
-import './basic/index'
-import './gameplay'
+import './basic'
 import './weapon'
 import './death'
-import './zone'

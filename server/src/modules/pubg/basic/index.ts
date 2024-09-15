@@ -1,31 +1,13 @@
-import {
-    findAvailableLobby,
-    getRandomPositionInTerritory,
-    startLobbyCountdown
-} from "@src/modules/pubg/gameplay";
-import { excludePlayerFromLobby} from "@src/modules/pubg/death";
-
-// Позиция маркера для входа в режим игры
-const markerPosition = new mp.Vector3(123.47, -25.10, 66.5)
-
-// Создаем маркер
-mp.markers.new(1, markerPosition, 4, {
-    color: [152, 156, 197, 68],
-    visible: true,
-    dimension: 0
-});
-
-// Создаем колшэйп для входа в игровой режим
-const gameStartColshape = mp.colshapes.newSphere(markerPosition.x, markerPosition.y, markerPosition.z, 2);
+import {lobbyManager} from "@src/modules/pubg/gameplay/lobbyManager";
 
 // Событие входа игрока в колшэйп
 mp.events.add('playerEnterColshape', async (player, shape) => {
-    if (shape === gameStartColshape) {
-        const lobby = findAvailableLobby();
+    if (shape === lobbyManager.gameStartColshape) {
+        const lobby = lobbyManager.findAvailableLobby();
         if (!lobby.isGameActive) {
-            await getRandomPositionInTerritory(lobby, player).then((res) => {
+            await lobby.getRandomPositionInTerritory(player).then((res) => {
                 if (res.x === 0 && res.y === 0 && res.z === 0) {
-                    excludePlayerFromLobby(player, lobby)
+                    lobby.excludePlayerFromLobby(player)
                     player.notify(`не удалось начать игру`)
                     return
                 }
@@ -34,7 +16,7 @@ mp.events.add('playerEnterColshape', async (player, shape) => {
                 player.dimension = lobby.dimension;
                 player.notify(`Вы присоединились к лобби. Ждите начала игры!`);
                 if (lobby.players.size === 1) {
-                    startLobbyCountdown(lobby);
+                    lobby.startLobbyCountdown();
                 }
             })
         }
@@ -43,7 +25,6 @@ mp.events.add('playerEnterColshape', async (player, shape) => {
 
 // Событие, когда игрок заходит на сервер. Спавним рядом со входом в режим для удобства
 mp.events.add('playerJoin', (player) => {
-    const spawnPosition = new mp.Vector3(markerPosition.x - 2, markerPosition.y - 5, markerPosition.z); // Спавн рядом с маркером
-    player.spawn(spawnPosition);
+    player.spawn(lobbyManager.spawnPosition);
     player.notify('Добро пожаловать! Вы были перемещены в зону старта.');
 });

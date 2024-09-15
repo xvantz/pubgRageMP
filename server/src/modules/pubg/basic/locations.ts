@@ -1,8 +1,4 @@
-export type LocationsGame = {
-    name: string,
-    minPosition: Vector3,
-    maxPosition: Vector3,
-}
+import {LocationsGame} from "@shared/types/lobbyTypes";
 
 export const locationsGame: LocationsGame[] = [
     {
