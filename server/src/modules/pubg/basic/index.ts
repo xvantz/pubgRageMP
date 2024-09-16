@@ -5,6 +5,7 @@ mp.events.add('playerEnterColshape', async (player, shape) => {
     if (shape === lobbyManager.gameStartColshape) {
         const lobby = lobbyManager.findAvailableLobby();
         if (!lobby.isGameActive) {
+            lobby.addPlayer(player)
             await lobby.getRandomPositionInTerritory(player).then((res) => {
                 if (res.x === 0 && res.y === 0 && res.z === 0) {
                     lobby.excludePlayerFromLobby(player)
@@ -12,10 +13,9 @@ mp.events.add('playerEnterColshape', async (player, shape) => {
                     return
                 }
                 player.spawn(res);
-                lobby.players.set(player.id, player);
                 player.dimension = lobby.dimension;
                 player.notify(`Вы присоединились к лобби. Ждите начала игры!`);
-                if (lobby.players.size === 2) {
+                if (lobby.checkEnoughPlayer()) {
                     lobby.startLobbyCountdown();
                 }
             })

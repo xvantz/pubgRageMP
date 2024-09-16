@@ -2,7 +2,7 @@ import {ItemsPubgTypes} from "@shared/types/weaponPubgTypes";
 import {callClient, callClientAsync} from "@shared/rpcWrapper";
 import {randomFloatBetween} from "@src/utils/math";
 import {GroundHeightTypes} from "@shared/types/groundHeightTypes";
-import {handleError} from "@src/utils/handleError";
+import {CatchErrors, handleError} from "@src/utils/handleError";
 import {GameItem, LocationsGame} from "@shared/types/lobbyTypes";
 import {setPlayerArmour, setPlayerHP, setPlayerWeapon} from "@src/utils/player";
 import {KillDataPubg} from "@shared/types/playerDeadPubg";
@@ -16,10 +16,10 @@ export class GameLobby {
     readonly #territory: LocationsGame;
     #items: GameItem[] = [];
     readonly dimension: number;
-    #currentPhase: number = 0;
+    #currentPhase: number;
     #radius: number = 0;
     #baseRadius: number = 0;
-    private colshape: ColshapeMp
+    #colshape: ColshapeMp = null
     #playersOutsideZone: Set<PlayerMp> = new Set();
     readonly #onDestroy: (id: number) => void;
     readonly #playerMin: number = 2
@@ -48,6 +48,8 @@ export class GameLobby {
     ];
     readonly #startPosition: Vector3
     #intervalActiveGame: NodeJS.Timeout | null = null;
+    #isDeletingLobby: boolean
+    #playersDamageIntervals: Map<PlayerMp, NodeJS.Timeout> = new Map();
 
     constructor(id: number, dimension: number, territory: LocationsGame, onDestroy: (id: number) => void, startPosition: Vector3) {
         this.#id = id
@@ -55,25 +57,35 @@ export class GameLobby {
         this.#territory = territory;
         this.#onDestroy = onDestroy;
         this.#startPosition = startPosition
+        this.#isDeletingLobby = false
+        this.#currentPhase = 0
     }
 
+    @CatchErrors()
     public async startLobbyCountdown() {
         let countdown = 10; // Время до старта игры в секундах
         this.#countdown = setInterval(() => {
+            if(this.isGameActive){
+                clearInterval(this.#countdown);
+                this.#countdown = null;
+                countdown = 0
+                return
+            }
             countdown--;
             // Отправляем информацию о таймере всем игрокам в лобби
             this.players.forEach((player) => {
-                player.notify(`Игра начнется через ${countdown} секунд.`);
+                if(this.checkPlayer(player)) player.notify(`Игра начнется через ${countdown} секунд.`);
             });
             if (countdown <= 0) {
-                clearInterval(this.#countdown!);
+                clearInterval(this.#countdown);
+                this.#countdown = null
                 this.startGame();
             }
         }, 1000);
     }
 
+    @CatchErrors()
     private async startGame() {
-        if(this.onCancelStart()) return
         this.isGameActive = true;
         // Спавн оружия рандомно
         await this.spawnWeaponsAndArmor()
@@ -87,6 +99,7 @@ export class GameLobby {
         await this.startAllCountsForLobby()
         // Перемещаем всех игроков в рандомные позиции
         this.players.forEach((player) => {
+            if(!this.checkPlayer(player)) return
             this.getRandomPositionInTerritory(player).then((res) => {
                 if (res.x === 0 && res.y === 0 && res.z === 0) {
                     this.excludePlayerFromLobby(player)
@@ -100,6 +113,7 @@ export class GameLobby {
         await this.startZonePubg()
     }
 
+    @CatchErrors()
     public async getRandomPositionInTerritory(player: PlayerMp): Promise<Vector3> {
         const territory = this.#territory;
         const maxRetries = 10; // Максимальное количество попыток
@@ -110,6 +124,7 @@ export class GameLobby {
             const randomY = randomFloatBetween(territory.minPosition.y, territory.maxPosition.y);
             let randomZ: number | null = null;
             // Запрашиваем высоту земли для случайных координат
+            if(!this.checkPlayer(player)) return
             await callClientAsync<GroundHeightTypes, number>(player, "getGroundHeight", {x: randomX, y: randomY})
                 .then((res: number) => {
                     randomZ = res;
@@ -125,6 +140,7 @@ export class GameLobby {
         return new mp.Vector3(0, 0, 0);
     }
 
+    @CatchErrors()
     private async spawnWeaponsAndArmor() {
         const numberOfItems = 50;
         // Берем первого игрока из лобби для получения высоты
@@ -136,6 +152,7 @@ export class GameLobby {
         const spawnPromises = [];
         for (let i = 0; i < numberOfItems; i++) {
             const randomItem = this.#itemHashes[Math.floor(Math.random() * this.#itemHashes.length)];
+            if(!this.checkPlayer(player)) return
             const spawnPromise = this.getRandomPositionInTerritory(player).then((pos) => {
                 // Поднимаем предметы на 1 единицу над землей
                 pos.z += 1;
@@ -160,15 +177,19 @@ export class GameLobby {
         await Promise.all(spawnPromises);
     }
 
+    @CatchErrors()
     public async excludePlayerFromLobby(player: PlayerMp) {
         if (this.players.has(player.id)) {
-            this.players.delete(player.id); // Удаляем игрока из списка лобби
             callClient(player, 'updateItemsGame', [])
+            this.resetAllCounts(player)
+            this.resetAllZones(player)
+            this.players.delete(player.id); // Удаляем игрока из списка лобби
         }
     }
 
+    @CatchErrors()
     public async givePlayerItemInGame(player: PlayerMp, weaponObject: ObjectMp) {
-        if (player) {
+        if (this.checkPlayer(player)) {
             const item = this.#items.find((item) => item.object === weaponObject)
             if (!item) return;
             switch (item.type) {
@@ -184,21 +205,24 @@ export class GameLobby {
                     setPlayerHP(player, 100)
                 }
             }
-            await this.deleteItemInLobby(item.object)
+            this.deleteItemInLobby(item.object)
             item.object.destroy()
         }
     }
 
-    private deleteItemInLobby = async (itemDel: ObjectMp) => {
+    @CatchErrors()
+    private deleteItemInLobby(itemDel: ObjectMp) {
         const findIndex = this.#items.findIndex((item) => item.object === itemDel)
         if (findIndex !== -1) {
             this.#items.splice(findIndex, 1);
             this.players.forEach((player) => {
+                if(!this.checkPlayer(player)) return
                 callClient(player, "deleteItemsGame", itemDel)
             })
         }
     }
 
+    @CatchErrors()
     private async startAllCountsForLobby() {
         this.players.forEach((player) => {
             this.updateViewCounts(player, true)
@@ -206,35 +230,45 @@ export class GameLobby {
         await this.updateLivedPlayersInLobby()
     }
 
+    @CatchErrors()
     private async updateViewCounts(player: PlayerMp, value: boolean) {
+        if(!this.checkPlayer(player)) return
         callClient(player, "updateViewCountsPubg", value)
     }
 
+    @CatchErrors()
     public async updateLivedPlayersInLobby() {
         const count = this.players.size
         this.players.forEach((player) => {
+            if(!this.checkPlayer(player)) return
             callClient(player, "updatePubgLivedPlayersCount", count)
         })
     }
 
+    @CatchErrors()
     public async updatePlayerKills(player: PlayerMp) {
+        if(!this.checkPlayer(player)) return
         callClient(player, "updateKilledPubgPlayersCount")
         player.notify(`Вы убили игрока`)
     }
 
+    @CatchErrors()
     public resetAllCounts(player: PlayerMp) {
+        if(!this.checkPlayer(player)) return
         callClient(player, "resetAllCountsPubg")
     }
 
+    @CatchErrors()
     public async addKillBarNew(player: PlayerMp, killer: PlayerMp) {
+        if(!this.checkPlayer(player)) return
         const killData: KillDataPubg = {killerName: killer.name, killedName: player.name, time: Date.now()}
         this.players.forEach((player) => {
             callClient<KillDataPubg>(player, "killInfoViewPubg", killData)
         })
     }
 
+    @CatchErrors()
     private async startZonePubg() {
-        if(this.onCancelStart()) return
         this.checkCountPlayers()
         const minPos = this.#territory.minPosition
         const maxPos = this.#territory.maxPosition
@@ -246,34 +280,36 @@ export class GameLobby {
         const radius = Math.sqrt(2 * width * height) / 2;
         this.#radius = radius
         this.#baseRadius = radius
-        this.colshape = mp.colshapes.newCircle(centerX, centerY, radius, this.dimension);
+        this.#colshape = mp.colshapes.newCircle(centerX, centerY, radius, this.dimension);
         const position = new mp.Vector3(centerX, centerY, centerZ)
         this.players.forEach((player) => {
+            if(!this.checkPlayer(player)) return
             callClient<ZonePubg>(player, "updateViewZonePubg", {position: position, radius})
         })
         await this.manageZonePhases(position);
     }
 
+    @CatchErrors()
     private async manageZonePhases(position: Vector3) {
         const applyNextPhase = () => {
-            if(this.onCancelStart()) return;
             this.checkCountPlayers()
             const currentPhase = this.#currentPhase
             if (currentPhase >= this.#phases.length) return;
-            const {duration, pause} = this.#phases[currentPhase];
+            const {duration, pause, damage} = this.#phases[currentPhase];
             this.#currentPhase++;
             this.players.forEach((player) => {
+                if(!this.checkPlayer(player)) return
                 callClient(player, "UpdatePhaseZone", this.#currentPhase)
             })
-            this.shrinkZoneGradually(position, duration, () => {
+            this.shrinkZoneGradually(position, duration, damage, () => {
                 setTimeout(applyNextPhase, pause); // Пауза перед следующей фазой
-            });
+            })
         };
         applyNextPhase();
     };
 
-    private async shrinkZoneGradually(position: Vector3, duration: number, onComplete: Function) {
-        if(this.onCancelStart()) return
+    @CatchErrors()
+    private async shrinkZoneGradually(position: Vector3, duration: number, damage: number, onComplete: Function) {
         this.checkCountPlayers()
         const minRadius = 10;
         // Вычисляем уменьшение радиуса для текущей фазы в секунду
@@ -282,6 +318,9 @@ export class GameLobby {
         const speedChange = countOneStep / (duration / 100)
         const steps = countOneStep / speedChange
         let step = 0
+        this.players.forEach((player) => {
+            this.monitorPlayerPosition(player, damage)
+        })
         const shrinkZoneInterval = setInterval(() => {
             if (step >= steps || this.#radius <= minRadius) {
                 clearInterval(shrinkZoneInterval);
@@ -289,21 +328,27 @@ export class GameLobby {
                 return;
             }
             this.#radius -= speedChange;
-            if (this.colshape) this.colshape.destroy();
-            this.colshape = mp.colshapes.newCircle(position.x, position.y, this.#radius, this.dimension);
+            if (this.#colshape){
+                this.#colshape.destroy();
+                this.#colshape = null
+            }
+            this.#colshape = mp.colshapes.newCircle(position.x, position.y, this.#radius, this.dimension);
             this.players.forEach((player) => {
+                if(!this.checkPlayer(player)) return
                 callClient<ZonePubg>(player, "updateZonePubg", {position, radius: this.#radius});
-                this.monitorPlayerPosition(player, this.#phases[this.#currentPhase].damage)
             });
             step++
         }, 100);
     };
 
-    private startDamageOverTime(player: PlayerMp, damage: number, delay: number = 5000) {
+    @CatchErrors()
+    private startDamageOverTime(player: PlayerMp, damage: number, delay: number = 1000) {
+        if(!this.checkPlayer(player)) return
         // Устанавливаем таймер для задержки перед началом урона
         setTimeout(() => {
             // Начинаем наносить урон с интервалом
-            const damageInterval = setInterval(() => {
+            const damageInterval: NodeJS.Timeout = setInterval(() => {
+                if(!this.checkEnoughPlayer()) return clearInterval(damageInterval)
                 if (this.#playersOutsideZone.has(player)) {
                     if (player.dimension === 0) {
                         clearInterval(damageInterval);
@@ -323,22 +368,35 @@ export class GameLobby {
         }, delay); // Задержка перед началом урона
     };
 
+    @CatchErrors()
     public resetAllZones(player: PlayerMp) {
+        if(!this.checkPlayer(player)) return
         callClient(player, "resetViewZonePubg")
     }
 
-    private checkPlayerInColshape(player: PlayerMp) {
-        if(mp.players.exists(player) && this.colshape) return true
-        // Проверка находится ли точка внутри колшейпа
-        return this.colshape.isPointWithin(player.position);
+    @CatchErrors()
+    private checkPlayerInColshape(player: PlayerMp): boolean {
+        if(this.checkPlayer(player) && this.#colshape !== null) {
+            // Проверка находится ли точка внутри колшейпа
+            return this.#colshape.isPointWithin(player.position);
+        }else{
+            return true
+        }
     };
 
-    private monitorPlayerPosition(player: PlayerMp, damage: number) {
+    @CatchErrors()
+    private async monitorPlayerPosition(player: PlayerMp, damage: number) {
+        if(!this.checkPlayer(player)) return
         const checkInterval = 1000; // Интервал проверки
-        const damageInterval = 5000; // Интервал старта нанесения урона
+        const damageInterval = 1000; // Интервал старта нанесения урона
+
+        if (this.#playersDamageIntervals.has(player)) {
+            clearInterval(this.#playersDamageIntervals.get(player));
+            this.#playersDamageIntervals.delete(player);
+        }
 
         const interval = setInterval(() => {
-            if (player && this.colshape) {
+            if (this.checkPlayer(player) && this.#colshape !== null) {
                 // Проверяем, находится ли игрок за пределами колшейпа
                 if (!this.checkPlayerInColshape(player)) {
                     if (!this.#playersOutsideZone.has(player)) {
@@ -349,30 +407,24 @@ export class GameLobby {
                 } else {
                     if (this.#playersOutsideZone.has(player)) {
                         this.#playersOutsideZone.delete(player);
-                        clearInterval(interval)
                         // Останавливаем урон, если игрок вернулся в зону
                     }
                 }
             }
         }, checkInterval);
+
+        this.#playersDamageIntervals.set(player, interval);
     }
 
-    private onCancelStart(): boolean {
-        if(this.players.size < this.#playerMin) {
-            this.players.forEach((player) => {
-                player.notify('Старт игры отменен')
-            })
-            this.onDeleteLobby()
-            return true
-        }else{
-            return false
-        }
-    }
-
+    @CatchErrors()
     private onDeleteLobby() {
+        if(this.#isDeletingLobby) return
+        this.#isDeletingLobby = true
         clearInterval(this.#intervalActiveGame)
         this.#intervalActiveGame = null;
+        this.#playersOutsideZone.clear()
         this.players.forEach((player) => {
+            if(!this.checkPlayer(player)) return
             player.spawn(this.#startPosition)
             callClient(player, 'updateItemsGame', [])
             this.resetAllCounts(player)
@@ -381,18 +433,59 @@ export class GameLobby {
             player.removeAllWeapons()
             player.notify(`Игра завершена`)
         })
-        this.#items.forEach((item) => {
-            item.object.destroy();
+        this.players.clear()
+        this.#playersDamageIntervals.forEach((interval) => {
+            clearInterval(interval)
         })
-        this.colshape.destroy()
+        this.#playersDamageIntervals.clear()
+        this.#items.forEach((item) => {
+            if (item.object) {
+                try {
+                    item.object.destroy();
+                } catch (error) {
+                    console.error(`Ошибка при уничтожении объекта: ${error}`);
+                }
+            } else {
+                console.warn(`Объект уже удалён или недоступен: ${item.object}`);
+            }
+        })
+        this.#colshape.destroy()
+        this.#colshape = null
         this.#onDestroy(this.#id)
     }
 
+    @CatchErrors()
     private checkCountPlayers() {
         this.#intervalActiveGame = setInterval(() => {
             if(this.players.size < this.#playerMin) {
                 this.onDeleteLobby()
             }
-        })
+        }, 1000)
+    }
+
+    @CatchErrors()
+    public checkEnoughPlayer(): boolean {
+        return !(this.players.size < this.#playerMin)
+    }
+
+    @CatchErrors()
+    private checkPlayer(player: PlayerMp): boolean {
+        if(mp.players.exists(player) && this.players.has(player.id)){
+            return true
+        }else if(!mp.players.exists(player) && this.players.has(player.id)){
+            this.players.delete(player.id);
+            if(this.#playersDamageIntervals.has(player)){
+                clearInterval(this.#playersDamageIntervals.get(player));
+                this.#playersDamageIntervals.delete(player);
+            }
+            if(this.#playersOutsideZone.has(player)) this.#playersOutsideZone.delete(player)
+            return false
+        }else{
+            return false
+        }
+    }
+    @CatchErrors()
+    public addPlayer(player: PlayerMp) {
+        if(mp.players.exists(player)) this.players.set(player.id, player)
     }
 }

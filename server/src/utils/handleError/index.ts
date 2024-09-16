@@ -18,3 +18,30 @@ const sendToPlayerChat = (player: PlayerMp, messages: any[]) => {
         player.outputChatBox(`${message}`)
     });
 }
+
+export function CatchErrors() {
+    return function (
+        target: any,
+        propertyKey: string,
+        descriptor: PropertyDescriptor
+    ) {
+        const originalMethod = descriptor.value;
+        descriptor.value = function (...args: any[]) {
+            try {
+                const result = originalMethod.apply(this, args);
+                if (result instanceof Promise) {
+                    return result.catch((error: Error) => {
+                        console.error(`Error in async method ${propertyKey}:`, error);
+                        throw error; // Перебрасываем ошибку дальше
+                    });
+                }
+                return result;
+            } catch (error) {
+                console.error(`Error in sync method ${propertyKey}:`, error);
+                throw error; // Перебрасываем ошибку дальше
+            }
+        };
+
+        return descriptor;
+    };
+}

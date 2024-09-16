@@ -14,8 +14,6 @@ createEvent("playerDeadPubg", async (data: PlayerDeadPubg, info) => {
     player.notify("Вы перемещены ко входу.");
     if(!lobby) return
     await lobby.excludePlayerFromLobby(player)
-    lobby.resetAllCounts(player)
-    lobby.resetAllZones(player)
     if(!killer) return
     await lobby.updatePlayerKills(killer)
     await lobby.updateLivedPlayersInLobby()
