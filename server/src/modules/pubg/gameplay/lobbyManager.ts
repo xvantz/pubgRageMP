@@ -10,7 +10,7 @@ class LobbyManager {
 
     constructor() {
         this.#markerPosition = new mp.Vector3(123.47, -25.10, 66.5)
-        this.gameStartColshape = mp.colshapes.newSphere(this.#markerPosition.x - 2, this.#markerPosition.y - 5, this.#markerPosition.z, 2);
+        this.gameStartColshape = mp.colshapes.newSphere(this.#markerPosition.x, this.#markerPosition.y, this.#markerPosition.z, 2);
         this.spawnPosition = new mp.Vector3(this.#markerPosition.x - 2, this.#markerPosition.y - 5, this.#markerPosition.z)
         mp.markers.new(1, this.#markerPosition, 4, {
             color: [152, 156, 197, 68],
