@@ -15,7 +15,7 @@ mp.events.add('playerEnterColshape', async (player, shape) => {
                 lobby.players.set(player.id, player);
                 player.dimension = lobby.dimension;
                 player.notify(`Вы присоединились к лобби. Ждите начала игры!`);
-                if (lobby.players.size === 1) {
+                if (lobby.players.size === 2) {
                     lobby.startLobbyCountdown();
                 }
             })

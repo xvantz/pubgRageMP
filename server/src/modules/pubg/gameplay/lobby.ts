@@ -22,7 +22,7 @@ export class GameLobby {
     private colshape: ColshapeMp
     #playersOutsideZone: Set<PlayerMp> = new Set();
     readonly #onDestroy: (id: number) => void;
-    readonly #playerMin: number = 1
+    readonly #playerMin: number = 2
     readonly #itemHashes = [
         {type: "weapon", hash: "w_sb_assaultsmg", weaponHash: 736523883},
         {type: "weapon", hash: "w_ar_specialcarbine", weaponHash: 3231910285},
@@ -321,7 +321,7 @@ export class GameLobby {
     }
 
     private checkPlayerInColshape(player: PlayerMp) {
-        if(!player) return
+        if(!player && this.colshape) return
         // Проверка находится ли точка внутри колшейпа
         return this.colshape.isPointWithin(player.position);
     };
