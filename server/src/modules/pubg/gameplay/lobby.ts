@@ -321,7 +321,7 @@ export class GameLobby {
     }
 
     private checkPlayerInColshape(player: PlayerMp) {
-        if(!player && this.colshape) return
+        if(mp.players.exists(player) && this.colshape) return
         // Проверка находится ли точка внутри колшейпа
         return this.colshape.isPointWithin(player.position);
     };
@@ -333,7 +333,7 @@ export class GameLobby {
         const interval = setInterval(() => {
             if (player && this.colshape) {
                 // Проверяем, находится ли игрок за пределами колшейпа
-                if (player && !this.checkPlayerInColshape(player)) {
+                if (!this.checkPlayerInColshape(player)) {
                     if (!this.#playersOutsideZone.has(player)) {
                         this.#playersOutsideZone.add(player);
                         // Начинаем наносить урон, если игрок за пределами
