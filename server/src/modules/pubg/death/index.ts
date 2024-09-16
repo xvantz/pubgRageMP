@@ -9,12 +9,13 @@ createEvent("playerDeadPubg", async (data: PlayerDeadPubg, info) => {
     // Телепортируем игрока к точке входа
     player.dimension = 0;
     player.health = 100
+    player.removeAllWeapons()
     player.spawn(lobbyManager.spawnPosition);
     player.notify("Вы перемещены ко входу.");
     if(!lobby) return
     await lobby.excludePlayerFromLobby(player)
-    await lobby.resetAllCounts(player)
-    await lobby.resetAllZones(player)
+    lobby.resetAllCounts(player)
+    lobby.resetAllZones(player)
     if(!killer) return
     await lobby.updatePlayerKills(killer)
     await lobby.updateLivedPlayersInLobby()

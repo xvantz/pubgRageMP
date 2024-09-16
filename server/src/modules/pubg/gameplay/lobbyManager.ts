@@ -37,7 +37,7 @@ class LobbyManager {
     private createLobby(): GameLobby {
         const randomTerritory = locationsGame[Math.floor(Math.random() * locationsGame.length)];
         const id = this.#lobbies.size
-        const newLobby = new GameLobby(id, this.#nextDimension++, randomTerritory, this.deleteLobbyEndGame.bind(this))
+        const newLobby = new GameLobby(id, this.#nextDimension++, randomTerritory, this.deleteLobbyEndGame.bind(this), this.spawnPosition)
         this.#lobbies.set(id, newLobby);
         return newLobby;
     }

@@ -46,12 +46,15 @@ export class GameLobby {
         {duration: 75000, pause: 30000, damage: 7}, // Фаза 7
         {duration: 80000, pause: 25000, damage: 8}, // Фаза 8
     ];
+    readonly #startPosition: Vector3
+    #intervalActiveGame: NodeJS.Timeout | null = null;
 
-    constructor(id: number, dimension: number, territory: LocationsGame, onDestroy: (id: number) => void) {
+    constructor(id: number, dimension: number, territory: LocationsGame, onDestroy: (id: number) => void, startPosition: Vector3) {
         this.#id = id
         this.dimension = dimension;
         this.#territory = territory;
         this.#onDestroy = onDestroy;
+        this.#startPosition = startPosition
     }
 
     public async startLobbyCountdown() {
@@ -160,6 +163,7 @@ export class GameLobby {
     public async excludePlayerFromLobby(player: PlayerMp) {
         if (this.players.has(player.id)) {
             this.players.delete(player.id); // Удаляем игрока из списка лобби
+            callClient(player, 'updateItemsGame', [])
         }
     }
 
@@ -231,6 +235,7 @@ export class GameLobby {
 
     private async startZonePubg() {
         if(this.onCancelStart()) return
+        this.checkCountPlayers()
         const minPos = this.#territory.minPosition
         const maxPos = this.#territory.maxPosition
         const centerX = (minPos.x + maxPos.x) / 2;
@@ -252,6 +257,7 @@ export class GameLobby {
     private async manageZonePhases(position: Vector3) {
         const applyNextPhase = () => {
             if(this.onCancelStart()) return;
+            this.checkCountPlayers()
             const currentPhase = this.#currentPhase
             if (currentPhase >= this.#phases.length) return;
             const {duration, pause} = this.#phases[currentPhase];
@@ -268,6 +274,7 @@ export class GameLobby {
 
     private async shrinkZoneGradually(position: Vector3, duration: number, onComplete: Function) {
         if(this.onCancelStart()) return
+        this.checkCountPlayers()
         const minRadius = 10;
         // Вычисляем уменьшение радиуса для текущей фазы в секунду
         const totalPhase = this.#phases.length
@@ -321,7 +328,7 @@ export class GameLobby {
     }
 
     private checkPlayerInColshape(player: PlayerMp) {
-        if(mp.players.exists(player) && this.colshape) return
+        if(mp.players.exists(player) && this.colshape) return true
         // Проверка находится ли точка внутри колшейпа
         return this.colshape.isPointWithin(player.position);
     };
@@ -363,16 +370,29 @@ export class GameLobby {
     }
 
     private onDeleteLobby() {
+        clearInterval(this.#intervalActiveGame)
+        this.#intervalActiveGame = null;
         this.players.forEach((player) => {
+            player.spawn(this.#startPosition)
             callClient(player, 'updateItemsGame', [])
             this.resetAllCounts(player)
             this.resetAllZones(player)
             player.dimension = 0
+            player.removeAllWeapons()
+            player.notify(`Игра завершена`)
         })
         this.#items.forEach((item) => {
             item.object.destroy();
         })
         this.colshape.destroy()
         this.#onDestroy(this.#id)
+    }
+
+    private checkCountPlayers() {
+        this.#intervalActiveGame = setInterval(() => {
+            if(this.players.size < this.#playerMin) {
+                this.onDeleteLobby()
+            }
+        })
     }
 }
