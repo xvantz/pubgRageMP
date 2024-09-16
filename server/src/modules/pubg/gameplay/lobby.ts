@@ -333,7 +333,7 @@ export class GameLobby {
         const interval = setInterval(() => {
             if (player && this.colshape) {
                 // Проверяем, находится ли игрок за пределами колшейпа
-                if (!this.checkPlayerInColshape(player)) {
+                if (player && !this.checkPlayerInColshape(player)) {
                     if (!this.#playersOutsideZone.has(player)) {
                         this.#playersOutsideZone.add(player);
                         // Начинаем наносить урон, если игрок за пределами
